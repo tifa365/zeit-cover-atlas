@@ -1,0 +1,76 @@
+/* MapLibre overrides and custom controls */
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+
+.map-container .maplibregl-canvas {
+  cursor: grab;
+}
+
+.map-container .maplibregl-canvas:active {
+  cursor: grabbing;
+}
+
+/* Cooperative gesture overlay */
+.maplibregl-cooperative-gesture-screen {
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--zeit-font-sans);
+  font-size: var(--zeit-font-16);
+}
+
+/* Zoom controls */
+.zoom-controls {
+  position: absolute;
+  bottom: var(--zeit-m);
+  left: var(--zeit-m);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+@media screen and (min-width: 48em) {
+  .zoom-controls {
+    left: auto;
+    right: var(--zeit-m);
+  }
+}
+
+.zoom-controls button {
+  width: 36px;
+  height: 36px;
+  background: var(--zeit-color-bg-primary);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--zeit-color-text-primary);
+  box-shadow: var(--zeit-shadow-m);
+}
+
+.zoom-controls button:first-child {
+  border-radius: var(--zeit-radius-m) var(--zeit-radius-m) 0 0;
+}
+
+.zoom-controls button:last-child {
+  border-radius: 0 0 var(--zeit-radius-m) var(--zeit-radius-m);
+}
+
+.zoom-controls button:hover {
+  background: var(--zeit-color-bg-secondary);
+}
+
+.zoom-controls button svg {
+  width: 36px;
+  height: 36px;
+}
+
+.zoom-controls button svg path {
+  fill: var(--zeit-color-shades-40);
+}

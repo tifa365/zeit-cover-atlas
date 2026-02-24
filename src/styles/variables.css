@@ -1,0 +1,109 @@
+:root {
+  /* Colors - Light */
+  --zeit-color-text-primary: #252525;
+  --zeit-color-text-secondary: #404040;
+  --zeit-color-text-tertiary: #69696c;
+  --zeit-color-bg-primary: #ffffff;
+  --zeit-color-bg-secondary: #eeeeee;
+  --zeit-color-bg-tertiary: #dfdfe1;
+  --zeit-color-border-primary: #d4d4d4;
+  --zeit-color-red: #ec5150;
+
+  --zeit-color-shades-10: #18181b;
+  --zeit-color-shades-20: #27272a;
+  --zeit-color-shades-30: #3f3f47;
+  --zeit-color-shades-40: #52525c;
+  --zeit-color-shades-60: #9f9fa9;
+  --zeit-color-shades-70: #d4d4d8;
+  --zeit-color-shades-90: #f4f4f5;
+  --zeit-color-shades-100: #ffffff;
+
+  /* Typography */
+  --zeit-font-sans: TabletGothic, "Helvetica Neue", Helvetica, Arial, FreeSans, sans-serif;
+  --zeit-font-serif-headline: ZeitTiemannSchmal, Georgia, Palatino, FreeSerif, serif;
+  --zeit-font-serif-body: FranziskaWebPro, Georgia, Palatino, "Palatino Linotype", FreeSerif, serif;
+
+  --zeit-font-10: 0.625rem;
+  --zeit-font-14: 0.875rem;
+  --zeit-font-16: 1rem;
+  --zeit-font-18: 1.125rem;
+  --zeit-font-20: 1.25rem;
+  --zeit-font-22: 1.375rem;
+  --zeit-font-42: 2.625rem;
+  --zeit-font-54: 3.375rem;
+
+  --zeit-lineheight-12: 1.2;
+  --zeit-letterspacing-l: 0.08em;
+
+  /* Spacing */
+  --zeit-xxxs: 0.25rem;
+  --zeit-xxs: 0.25rem;
+  --zeit-xs: 0.5rem;
+  --zeit-s: 0.75rem;
+  --zeit-m: 1rem;
+  --zeit-l: 1.5rem;
+
+  /* Border radius */
+  --zeit-radius-s: 0.125rem;
+  --zeit-radius-m: 0.25rem;
+  --zeit-radius-l: 0.5rem;
+
+  /* Shadows */
+  --zeit-shadow-m: 0 5px 16px #00000014, 0 3px 8px #0000001a;
+  --zeit-shadow-l: 0 15px 30px #00000026, 0 3px 8px #0003;
+}
+
+@media screen and (min-width: 48em) {
+  :root {
+    --zeit-xxs: 0.375rem;
+  }
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  html:not(.color-scheme-light) {
+    --zeit-color-text-primary: #ffffff;
+    --zeit-color-text-secondary: #bababa;
+    --zeit-color-text-tertiary: #999999;
+    --zeit-color-bg-primary: #121212;
+    --zeit-color-bg-secondary: #232323;
+    --zeit-color-bg-tertiary: #2e2e2e;
+    --zeit-color-border-primary: #3f3f47;
+    --zeit-color-red: #d23532;
+
+    --zeit-color-shades-10: #f4f4f5;
+    --zeit-color-shades-20: #e4e4e7;
+    --zeit-color-shades-30: #d4d4d8;
+    --zeit-color-shades-40: #9f9fa9;
+    --zeit-color-shades-60: #52525c;
+    --zeit-color-shades-70: #3f3f47;
+    --zeit-color-shades-90: #18181b;
+    --zeit-color-shades-100: #000000;
+
+    --zeit-shadow-m: 0 5px 16px #00000026, 0 3px 8px #0003;
+    --zeit-shadow-l: 0 15px 30px #0009, 0 3px 8px #0000004d;
+  }
+}
+
+html.color-scheme-dark {
+  --zeit-color-text-primary: #ffffff;
+  --zeit-color-text-secondary: #bababa;
+  --zeit-color-text-tertiary: #999999;
+  --zeit-color-bg-primary: #121212;
+  --zeit-color-bg-secondary: #232323;
+  --zeit-color-bg-tertiary: #2e2e2e;
+  --zeit-color-border-primary: #3f3f47;
+  --zeit-color-red: #d23532;
+
+  --zeit-color-shades-10: #f4f4f5;
+  --zeit-color-shades-20: #e4e4e7;
+  --zeit-color-shades-30: #d4d4d8;
+  --zeit-color-shades-40: #9f9fa9;
+  --zeit-color-shades-60: #52525c;
+  --zeit-color-shades-70: #3f3f47;
+  --zeit-color-shades-90: #18181b;
+  --zeit-color-shades-100: #000000;
+
+  --zeit-shadow-m: 0 5px 16px #00000026, 0 3px 8px #0003;
+  --zeit-shadow-l: 0 15px 30px #0009, 0 3px 8px #0000004d;
+}
