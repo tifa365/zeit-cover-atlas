@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "../styles/map.css";
 import type { CoverEntry } from "../utils/coverLookup";
-import { getCoverThumbUrl } from "../utils/coverUrl";
+import { getCoverUrl } from "../utils/coverUrl";
 
 // Grid layout constants – keep near equator to avoid Mercator distortion
 const COLS = 53; // ~weeks per year
@@ -90,34 +90,21 @@ export default function CoverMap({
     });
 
     m.on("load", () => {
-      // We'll render covers as HTML markers for image support
-      // MapLibre symbol layers with icon-image need pre-loaded images which
-      // doesn't scale to 4187 unique images. Instead use a fill-extrusion
-      // or custom layer. The simplest approach: render rectangles as the base
-      // and add images via HTML overlay on click/zoom.
-
-      // Render cover rectangles as a fill layer
+      // Clickable cover rectangles (invisible, on top for hit-testing)
       const rectFeatures = covers.map((cover, i) => {
         const [lng, lat] = coverToGridCoords(i);
         return {
           type: "Feature" as const,
-          properties: {
-            index: i,
-            id: cover.id,
-            issue: cover.issue,
-            start: cover.start,
-          },
+          properties: { index: i, id: cover.id, issue: cover.issue, start: cover.start },
           geometry: {
             type: "Polygon" as const,
-            coordinates: [
-              [
-                [lng - CELL_W / 2, lat - CELL_H / 2],
-                [lng + CELL_W / 2, lat - CELL_H / 2],
-                [lng + CELL_W / 2, lat + CELL_H / 2],
-                [lng - CELL_W / 2, lat + CELL_H / 2],
-                [lng - CELL_W / 2, lat - CELL_H / 2],
-              ],
-            ],
+            coordinates: [[
+              [lng - CELL_W / 2, lat - CELL_H / 2],
+              [lng + CELL_W / 2, lat - CELL_H / 2],
+              [lng + CELL_W / 2, lat + CELL_H / 2],
+              [lng - CELL_W / 2, lat + CELL_H / 2],
+              [lng - CELL_W / 2, lat - CELL_H / 2],
+            ]],
           },
         };
       });
@@ -127,32 +114,47 @@ export default function CoverMap({
         data: { type: "FeatureCollection", features: rectFeatures },
       });
 
+      // Sprite image covering the entire grid — one load for all 4187 covers
+      const lastCol = COLS - 1;
+      const lastRow = TOTAL_ROWS - 1;
+      const [lng0] = coverToGridCoords(0);           // first col center
+      const [lngN] = coverToGridCoords(lastCol);     // last col center
+      const [, latTop] = coverToGridCoords(0);        // first row center
+      const [, latBot] = coverToGridCoords(lastRow * COLS); // last row center
+
+      const spriteLeft = lng0 - CELL_W / 2;
+      const spriteRight = lngN + CELL_W / 2;
+      const spriteTop = latTop + CELL_H / 2;
+      const spriteBottom = latBot - CELL_H / 2;
+
+      m.addSource("covers-sprite", {
+        type: "image",
+        url: "/covers-sprite.webp",
+        coordinates: [
+          [spriteLeft, spriteTop],      // top-left
+          [spriteRight, spriteTop],     // top-right
+          [spriteRight, spriteBottom],  // bottom-right
+          [spriteLeft, spriteBottom],   // bottom-left
+        ],
+      });
+
+      m.addLayer({
+        id: "covers-sprite",
+        type: "raster",
+        source: "covers-sprite",
+        paint: { "raster-fade-duration": 0 },
+      });
+
+      // Invisible fill layer on top for click hit-testing
       m.addLayer({
         id: "cover-rects-fill",
         type: "fill",
         source: "cover-rects",
-        paint: {
-          "fill-color": "#2a2a2a",
-          "fill-opacity": 1,
-        },
+        paint: { "fill-color": "#000", "fill-opacity": 0 },
       });
 
-      m.addLayer({
-        id: "cover-rects-outline",
-        type: "line",
-        source: "cover-rects",
-        paint: {
-          "line-color": "#333",
-          "line-width": 0.5,
-        },
-      });
-
-      // Now load cover images as individual image sources + raster layers
-      // This is too heavy for 4187 images. Instead, we'll use a custom
-      // canvas-based approach via addImage + symbols.
-      //
-      // Best approach: use HTML img elements positioned via map.project()
-      loadVisibleCoverImages(m, covers);
+      // Progressively swap in hi-res images when zoomed in
+      loadHiResCovers(m, covers);
 
       setMapLoaded(true);
     });
@@ -176,9 +178,9 @@ export default function CoverMap({
       m.getCanvas().style.cursor = "";
     });
 
-    // Reload images on move
+    // Swap in hi-res on move
     m.on("moveend", () => {
-      loadVisibleCoverImages(m, covers);
+      loadHiResCovers(m, covers);
     });
 
     map.current = m;
@@ -246,38 +248,29 @@ function ZoomControls({ map }: { map: maplibregl.Map }) {
   );
 }
 
-/** Track which cover image sources are currently on the map */
-const loadedImages = new Set<number>();
+/** Track which hi-res cover images are on the map */
+const hiResLoaded = new Set<number>();
 
 /**
- * Load cover images that are visible (plus a margin), and remove
- * images that have scrolled far enough off-screen.
+ * When zoomed in enough, swap in full-resolution cover images
+ * for visible cells (layered on top of the sprite).
+ * Remove them when scrolled away to save memory.
  */
-function loadVisibleCoverImages(
-  map: maplibregl.Map,
-  covers: CoverEntry[]
-) {
+function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
   const bounds = map.getBounds();
   const zoom = map.getZoom();
 
-  // Only show images when zoomed in enough
-  if (zoom < 5) {
-    // Remove all images when zoomed out
-    for (const i of loadedImages) {
-      const id = `cover-img-${i}`;
+  // Only load hi-res when zoomed in close (≥ ~10 covers across screen)
+  if (zoom < 9) {
+    for (const i of hiResLoaded) {
+      const id = `cover-hires-${i}`;
       if (map.getLayer(id)) map.removeLayer(id);
       if (map.getSource(id)) map.removeSource(id);
     }
-    loadedImages.clear();
+    hiResLoaded.clear();
     return;
   }
 
-  // Determine step based on zoom (show fewer images when zoomed out)
-  let step = 1;
-  if (zoom < 5.5) step = 4;
-  else if (zoom < 6) step = 2;
-
-  // Viewport with a 50% margin for pre-loading neighbours
   const lngSpan = bounds.getEast() - bounds.getWest();
   const latSpan = bounds.getNorth() - bounds.getSouth();
   const marginLng = lngSpan * 0.5;
@@ -287,63 +280,56 @@ function loadVisibleCoverImages(
   const minLat = bounds.getSouth() - marginLat;
   const maxLat = bounds.getNorth() + marginLat;
 
-  // 1) Remove images that are outside the extended viewport
-  for (const i of loadedImages) {
+  // Remove off-screen hi-res
+  for (const i of hiResLoaded) {
     const [lng, lat] = coverToGridCoords(i);
     if (
-      lng + CELL_W / 2 < minLng ||
-      lng - CELL_W / 2 > maxLng ||
-      lat + CELL_H / 2 < minLat ||
-      lat - CELL_H / 2 > maxLat
+      lng + CELL_W / 2 < minLng || lng - CELL_W / 2 > maxLng ||
+      lat + CELL_H / 2 < minLat || lat - CELL_H / 2 > maxLat
     ) {
-      const id = `cover-img-${i}`;
+      const id = `cover-hires-${i}`;
       if (map.getLayer(id)) map.removeLayer(id);
       if (map.getSource(id)) map.removeSource(id);
-      loadedImages.delete(i);
+      hiResLoaded.delete(i);
     }
   }
 
-  // 2) Add images that are inside the extended viewport
-  //    Calculate row/col ranges to avoid scanning all 4187 covers
+  // Add hi-res for visible cells
   const colStep = CELL_W + GAP;
   const rowStep = CELL_H + GAP;
-  const minCol = Math.max(0, Math.floor((minLng) / colStep));
-  const maxCol = Math.min(COLS - 1, Math.ceil((maxLng) / colStep));
+  const minCol = Math.max(0, Math.floor(minLng / colStep));
+  const maxCol = Math.min(COLS - 1, Math.ceil(maxLng / colStep));
   const minRow = Math.max(0, Math.floor((GRID_TOP_LAT - maxLat) / rowStep));
   const maxRow = Math.min(TOTAL_ROWS - 1, Math.ceil((GRID_TOP_LAT - minLat) / rowStep));
 
-  for (let row = minRow; row <= maxRow; row += step) {
-    for (let col = minCol; col <= maxCol; col += step) {
+  for (let row = minRow; row <= maxRow; row++) {
+    for (let col = minCol; col <= maxCol; col++) {
       const i = row * COLS + col;
-      if (i >= covers.length) continue;
+      if (i >= covers.length || hiResLoaded.has(i)) continue;
 
-      if (loadedImages.has(i)) continue;
+      const [lng, lat] = coverToGridCoords(i);
+      const sourceId = `cover-hires-${i}`;
 
-    const [lng, lat] = coverToGridCoords(i);
-    const sourceId = `cover-img-${i}`;
-    const url = getCoverThumbUrl(covers[i].id);
+      map.addSource(sourceId, {
+        type: "image",
+        url: getCoverUrl(covers[i].id),
+        coordinates: [
+          [lng - CELL_W / 2, lat + CELL_H / 2],
+          [lng + CELL_W / 2, lat + CELL_H / 2],
+          [lng + CELL_W / 2, lat - CELL_H / 2],
+          [lng - CELL_W / 2, lat - CELL_H / 2],
+        ],
+      });
 
-    map.addSource(sourceId, {
-      type: "image",
-      url,
-      coordinates: [
-        [lng - CELL_W / 2, lat + CELL_H / 2],
-        [lng + CELL_W / 2, lat + CELL_H / 2],
-        [lng + CELL_W / 2, lat - CELL_H / 2],
-        [lng - CELL_W / 2, lat - CELL_H / 2],
-      ],
-    });
+      // Insert below the hit-test layer so clicks still work
+      map.addLayer({
+        id: sourceId,
+        type: "raster",
+        source: sourceId,
+        paint: { "raster-fade-duration": 300 },
+      }, "cover-rects-fill");
 
-    map.addLayer({
-      id: sourceId,
-      type: "raster",
-      source: sourceId,
-      paint: {
-        "raster-fade-duration": 200,
-      },
-    });
-
-    loadedImages.add(i);
+      hiResLoaded.add(i);
     }
   }
 }
