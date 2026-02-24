@@ -83,8 +83,8 @@ export default function CoverMap({
       },
       center: [centerLng, centerLat],
       zoom,
-      minZoom: 4,
-      maxZoom: 16,
+      minZoom: zoom,
+      maxZoom: zoom + 1,
       cooperativeGestures: true,
       attributionControl: false,
     });
@@ -248,20 +248,68 @@ function ZoomControls({ map }: { map: maplibregl.Map }) {
   );
 }
 
-/** Track which hi-res cover images are on the map */
+/** Track loaded row sprites and hi-res individual covers */
+const rowSpritesLoaded = new Set<number>();
 const hiResLoaded = new Set<number>();
 
 /**
- * When zoomed in enough, swap in full-resolution cover images
- * for visible cells (layered on top of the sprite).
- * Remove them when scrolled away to save memory.
+ * Three-tier image loading:
+ * 1) Full-grid sprite (always on) — 60×86 thumbs, ~4.4MB single load
+ * 2) Row sprites (zoom ≥ 8) — 120×172 (2×), ~280KB each, only visible rows
+ * 3) Full-res individual covers (zoom ≥ 11) — only visible cells
  */
 function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
   const bounds = map.getBounds();
   const zoom = map.getZoom();
 
-  // Only load hi-res when zoomed in close (≥ ~10 covers across screen)
-  if (zoom < 9) {
+  const rowStep = CELL_H + GAP;
+  const colStep = CELL_W + GAP;
+  const lngSpan = bounds.getEast() - bounds.getWest();
+  const latSpan = bounds.getNorth() - bounds.getSouth();
+  const marginLat = latSpan * 0.5;
+  const marginLng = lngSpan * 0.5;
+  const minLat = bounds.getSouth() - marginLat;
+  const maxLat = bounds.getNorth() + marginLat;
+  const minLng = bounds.getWest() - marginLng;
+  const maxLng = bounds.getEast() + marginLng;
+
+  const minRow = Math.max(0, Math.floor((GRID_TOP_LAT - maxLat) / rowStep));
+  const maxRow = Math.min(TOTAL_ROWS - 1, Math.ceil((GRID_TOP_LAT - minLat) / rowStep));
+
+  // --- Tier 2: Row sprites (2× resolution) — always load for visible rows ---
+  {
+    // Remove off-screen row sprites
+    for (const r of rowSpritesLoaded) {
+      if (r < minRow || r > maxRow) {
+        const id = `row-sprite-${r}`;
+        if (map.getLayer(id)) map.removeLayer(id);
+        if (map.getSource(id)) map.removeSource(id);
+        rowSpritesLoaded.delete(r);
+      }
+    }
+    // Add visible row sprites
+    for (let r = minRow; r <= maxRow; r++) {
+      if (rowSpritesLoaded.has(r)) continue;
+      const [, rowLat] = coverToGridCoords(r * COLS);
+      const [lastColLng] = coverToGridCoords(r * COLS + COLS - 1);
+      const id = `row-sprite-${r}`;
+      map.addSource(id, {
+        type: "image",
+        url: `/row-sprites/row-${r}.webp`,
+        coordinates: [
+          [0 - CELL_W / 2, rowLat + CELL_H / 2],
+          [lastColLng + CELL_W / 2, rowLat + CELL_H / 2],
+          [lastColLng + CELL_W / 2, rowLat - CELL_H / 2],
+          [0 - CELL_W / 2, rowLat - CELL_H / 2],
+        ],
+      });
+      map.addLayer({ id, type: "raster", source: id, paint: { "raster-fade-duration": 200 } }, "cover-rects-fill");
+      rowSpritesLoaded.add(r);
+    }
+  }
+
+  // --- Tier 3: Full-res individual covers ---
+  if (zoom < 11) {
     for (const i of hiResLoaded) {
       const id = `cover-hires-${i}`;
       if (map.getLayer(id)) map.removeLayer(id);
@@ -270,15 +318,6 @@ function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
     hiResLoaded.clear();
     return;
   }
-
-  const lngSpan = bounds.getEast() - bounds.getWest();
-  const latSpan = bounds.getNorth() - bounds.getSouth();
-  const marginLng = lngSpan * 0.5;
-  const marginLat = latSpan * 0.5;
-  const minLng = bounds.getWest() - marginLng;
-  const maxLng = bounds.getEast() + marginLng;
-  const minLat = bounds.getSouth() - marginLat;
-  const maxLat = bounds.getNorth() + marginLat;
 
   // Remove off-screen hi-res
   for (const i of hiResLoaded) {
@@ -295,12 +334,8 @@ function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
   }
 
   // Add hi-res for visible cells
-  const colStep = CELL_W + GAP;
-  const rowStep = CELL_H + GAP;
   const minCol = Math.max(0, Math.floor(minLng / colStep));
   const maxCol = Math.min(COLS - 1, Math.ceil(maxLng / colStep));
-  const minRow = Math.max(0, Math.floor((GRID_TOP_LAT - maxLat) / rowStep));
-  const maxRow = Math.min(TOTAL_ROWS - 1, Math.ceil((GRID_TOP_LAT - minLat) / rowStep));
 
   for (let row = minRow; row <= maxRow; row++) {
     for (let col = minCol; col <= maxCol; col++) {
@@ -321,7 +356,6 @@ function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
         ],
       });
 
-      // Insert below the hit-test layer so clicks still work
       map.addLayer({
         id: sourceId,
         type: "raster",
