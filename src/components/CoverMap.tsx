@@ -17,6 +17,7 @@ interface CoverMapProps {
   flyToIndex: number | null;
   onFlyComplete?: () => void;
   highlightedCovers: Map<string, number> | null; // id → score, null = no search active
+  onMapReady?: (map: maplibregl.Map) => void;
 }
 
 // Pre-compute grid origin so the grid is centred at lat=0
@@ -24,7 +25,9 @@ const TOTAL_ROWS = 79; // ceil(4187 / 53)
 const GRID_H = TOTAL_ROWS * (CELL_H + GAP);
 const GRID_TOP_LAT = GRID_H / 2; // ≈ +17 (well within low-distortion zone)
 
-function coverToGridCoords(index: number): [number, number] {
+export const GRID_COLS = COLS;
+
+export function coverToGridCoords(index: number): [number, number] {
   const col = index % COLS;
   const row = Math.floor(index / COLS);
   const lng = col * (CELL_W + GAP);
@@ -38,6 +41,7 @@ export default function CoverMap({
   flyToIndex,
   onFlyComplete,
   highlightedCovers,
+  onMapReady,
 }: CoverMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -195,6 +199,7 @@ export default function CoverMap({
       loadHiResCovers(m, covers);
 
       setMapLoaded(true);
+      onMapReady?.(m);
     });
 
     // Handle click on cover rectangles

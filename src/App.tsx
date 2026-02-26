@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import type maplibregl from "maplibre-gl";
 import CoverMap from "./components/CoverMap";
 import CoverModal from "./components/CoverModal";
 import DatePicker from "./components/DatePicker";
 import SearchBar from "./components/SearchBar";
+import SearchMiniMap from "./components/SearchMiniMap";
 import { findCoverByDate } from "./utils/coverLookup";
 import type { CoverEntry } from "./utils/coverLookup";
 import { initSearchIndex, searchCovers } from "./utils/searchIndex";
@@ -19,6 +21,7 @@ export default function App() {
   const [searchReady, setSearchReady] = useState(false);
   const [searchResults, setSearchResults] = useState<Map<string, number> | null>(null);
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
+  const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
 
   // Load cover data
   useEffect(() => {
@@ -68,10 +71,21 @@ export default function App() {
     }
     const results = searchCovers(query);
     if (results === null) return; // index not ready
-    const map = new Map(results.map((r) => [r.id, r.score]));
+    const map = new Map(results.map((r) => [r.id + ".jpg", r.score]));
     setSearchResults(map.size > 0 ? map : new Map());
     setSearchResultCount(map.size);
   }, []);
+
+  const handleMapReady = useCallback((m: maplibregl.Map) => {
+    setMapInstance(m);
+  }, []);
+
+  const handleMiniMapNavigate = useCallback(
+    (lng: number, lat: number) => {
+      mapInstance?.flyTo({ center: [lng, lat], duration: 800 });
+    },
+    [mapInstance]
+  );
 
   const handleCloseModal = useCallback(() => {
     setSelectedCover(null);
@@ -107,6 +121,7 @@ export default function App() {
         flyToIndex={flyToIndex}
         onFlyComplete={handleFlyComplete}
         highlightedCovers={searchResults}
+        onMapReady={handleMapReady}
       />
 
       <SearchBar
@@ -129,6 +144,13 @@ export default function App() {
           />
         </div>
       </div>
+
+      <SearchMiniMap
+        results={searchResults}
+        covers={covers}
+        mainMap={mapInstance}
+        onNavigate={handleMiniMapNavigate}
+      />
 
       <CoverModal
         cover={selectedCover}

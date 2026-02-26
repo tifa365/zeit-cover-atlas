@@ -1,0 +1,43 @@
+.search-minimap {
+  position: absolute;
+  bottom: 60px;
+  left: 12px;
+  width: 220px;
+  height: 160px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  cursor: crosshair;
+}
+
+.search-minimap.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.search-minimap-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* Hide MapLibre's logo and attribution inside mini-map */
+.search-minimap .maplibregl-ctrl-bottom-left,
+.search-minimap .maplibregl-ctrl-bottom-right {
+  display: none;
+}
+
+@media screen and (min-width: 48em) {
+  .search-minimap {
+    bottom: 80px;
+    left: 16px;
+    width: 260px;
+    height: 180px;
+  }
+}
