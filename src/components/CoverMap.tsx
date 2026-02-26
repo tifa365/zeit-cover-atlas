@@ -16,6 +16,7 @@ interface CoverMapProps {
   onCoverClick: (cover: CoverEntry, index: number) => void;
   flyToIndex: number | null;
   onFlyComplete?: () => void;
+  highlightedCovers: Map<string, number> | null; // id → score, null = no search active
 }
 
 // Pre-compute grid origin so the grid is centred at lat=0
@@ -36,6 +37,7 @@ export default function CoverMap({
   onCoverClick,
   flyToIndex,
   onFlyComplete,
+  highlightedCovers,
 }: CoverMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -83,9 +85,9 @@ export default function CoverMap({
       },
       center: [centerLng, centerLat],
       zoom,
-      minZoom: zoom,
+      minZoom: zoom - 2,
       maxZoom: zoom + 1,
-      cooperativeGestures: true,
+      cooperativeGestures: false,
       attributionControl: false,
     });
 
@@ -112,6 +114,7 @@ export default function CoverMap({
       m.addSource("cover-rects", {
         type: "geojson",
         data: { type: "FeatureCollection", features: rectFeatures },
+        promoteId: "id",
       });
 
       // Sprite image covering the entire grid — one load for all 4187 covers
@@ -143,6 +146,41 @@ export default function CoverMap({
         type: "raster",
         source: "covers-sprite",
         paint: { "raster-fade-duration": 0 },
+      });
+
+      // Dim layer: darkens non-matching covers during search
+      m.addLayer({
+        id: "cover-rects-dim",
+        type: "fill",
+        source: "cover-rects",
+        paint: {
+          "fill-color": "#000",
+          // When search active: feature-state "dimmed" controls opacity
+          // Default 0 (transparent) — set to 0.7 for non-matching covers
+          "fill-opacity": [
+            "coalesce",
+            ["feature-state", "dimmed"],
+            0,
+          ],
+          "fill-opacity-transition": { duration: 500, delay: 0 },
+        },
+      });
+
+      // Highlight border on matched covers
+      m.addLayer({
+        id: "cover-rects-highlight",
+        type: "line",
+        source: "cover-rects",
+        paint: {
+          "line-color": "#ec5150", // --zeit-color-red
+          "line-width": 2,
+          "line-opacity": [
+            "coalesce",
+            ["feature-state", "highlighted"],
+            0,
+          ],
+          "line-opacity-transition": { duration: 500, delay: 0 },
+        },
       });
 
       // Invisible fill layer on top for click hit-testing
@@ -204,6 +242,33 @@ export default function CoverMap({
       onFlyComplete?.();
     });
   }, [flyToIndex, mapLoaded]);
+
+  // Apply search highlight / dim via feature-state
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !map.current.isStyleLoaded()) return;
+    const m = map.current;
+    const source = "cover-rects";
+
+    if (highlightedCovers === null) {
+      // No active search — clear all feature states
+      for (let i = 0; i < covers.length; i++) {
+        m.setFeatureState(
+          { source, id: covers[i].id },
+          { dimmed: 0, highlighted: 0 }
+        );
+      }
+    } else {
+      // Search active — dim non-matching, highlight matching
+      for (let i = 0; i < covers.length; i++) {
+        const id = covers[i].id;
+        const isMatch = highlightedCovers.has(id);
+        m.setFeatureState(
+          { source, id },
+          { dimmed: isMatch ? 0 : 0.7, highlighted: isMatch ? 1 : 0 }
+        );
+      }
+    }
+  }, [highlightedCovers, mapLoaded, covers]);
 
   return (
     <div className="map-container">
@@ -303,7 +368,7 @@ function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
           [0 - CELL_W / 2, rowLat - CELL_H / 2],
         ],
       });
-      map.addLayer({ id, type: "raster", source: id, paint: { "raster-fade-duration": 200 } }, "cover-rects-fill");
+      map.addLayer({ id, type: "raster", source: id, paint: { "raster-fade-duration": 200 } }, "cover-rects-dim");
       rowSpritesLoaded.add(r);
     }
   }
@@ -361,7 +426,7 @@ function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
         type: "raster",
         source: sourceId,
         paint: { "raster-fade-duration": 300 },
-      }, "cover-rects-fill");
+      }, "cover-rects-dim");
 
       hiResLoaded.add(i);
     }

@@ -1,0 +1,48 @@
+@charset "UTF-8";:root {
+    --zoner-80-birthday-button-duv-color-karten-straße: #e7e7e7;
+}
+
+@media(prefers-color-scheme: dark) {
+    html:not(.color-scheme-light) {
+        --zoner-80-birthday-button-duv-color-karten-straße: #5a5a5a;
+    }
+}
+
+html.color-scheme-dark {
+    --zoner-80-birthday-button-duv-color-karten-straße: #5a5a5a;
+}
+
+:root {
+}
+
+:root {
+}
+
+html.color-scheme-dark,figure.color-scheme-dark {
+}
+
+@media(prefers-color-scheme: dark) {
+    html:not(.color-scheme-light) {
+    }
+}
+
+:root {
+}
+
+@media screen and (min-width: 48em) {
+    :root {
+    }
+}
+
+.zoner-birthday-button-emoji.svelte-1cxp7dv {
+    margin-right: var(--z-ds-space-s)
+}
+
+.zoner-birthday-button-count.svelte-1cxp7dv {
+    font-weight: 400;
+    color: var(--z-ds-color-background-20);
+    font-feature-settings: lining-nums tabular-nums;
+    font-variant-numeric: lining-nums tabular-nums;
+    margin-left: var(--z-ds-space-s)
+}
+

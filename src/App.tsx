@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import CoverMap from "./components/CoverMap";
 import CoverModal from "./components/CoverModal";
 import DatePicker from "./components/DatePicker";
+import SearchBar from "./components/SearchBar";
 import { findCoverByDate } from "./utils/coverLookup";
 import type { CoverEntry } from "./utils/coverLookup";
+import { initSearchIndex, searchCovers } from "./utils/searchIndex";
 import "./styles/app.css";
 
 const MIN_DATE = new Date(1946, 1, 21); // Feb 21, 1946
@@ -14,12 +16,22 @@ export default function App() {
   const [selectedCover, setSelectedCover] = useState<CoverEntry | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [flyToIndex, setFlyToIndex] = useState<number | null>(null);
+  const [searchReady, setSearchReady] = useState(false);
+  const [searchResults, setSearchResults] = useState<Map<string, number> | null>(null);
+  const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
 
   // Load cover data
   useEffect(() => {
     fetch("/fullCoversData.json")
       .then((r) => r.json())
       .then((data: CoverEntry[]) => setCovers(data));
+  }, []);
+
+  // Load search index
+  useEffect(() => {
+    initSearchIndex()
+      .then(() => setSearchReady(true))
+      .catch((err) => console.warn("Search index failed to load:", err));
   }, []);
 
   const handleCoverClick = useCallback(
@@ -46,6 +58,19 @@ export default function App() {
 
   const handleFlyComplete = useCallback(() => {
     setFlyToIndex(null);
+  }, []);
+
+  const handleSearch = useCallback((query: string) => {
+    if (!query.trim()) {
+      setSearchResults(null);
+      setSearchResultCount(null);
+      return;
+    }
+    const results = searchCovers(query);
+    if (results === null) return; // index not ready
+    const map = new Map(results.map((r) => [r.id, r.score]));
+    setSearchResults(map.size > 0 ? map : new Map());
+    setSearchResultCount(map.size);
   }, []);
 
   const handleCloseModal = useCallback(() => {
@@ -81,6 +106,13 @@ export default function App() {
         onCoverClick={handleCoverClick}
         flyToIndex={flyToIndex}
         onFlyComplete={handleFlyComplete}
+        highlightedCovers={searchResults}
+      />
+
+      <SearchBar
+        onSearch={handleSearch}
+        resultCount={searchResultCount}
+        disabled={!searchReady}
       />
 
       <div className="overlay-card">
