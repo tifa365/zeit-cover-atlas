@@ -211,11 +211,9 @@ export default function SearchMiniMap({
     onNavigate(lngLat.lng, lngLat.lat);
   }
 
-  const visible = results !== null && results.size > 0;
-
   return (
     <div
-      className={`search-minimap${visible ? " visible" : ""}`}
+      className={`search-minimap visible`}
       onClick={handleClick}
     >
       <div ref={containerRef} className="search-minimap-canvas" />
