@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type maplibregl from "maplibre-gl";
 import CoverMap from "./components/CoverMap";
 import CoverModal from "./components/CoverModal";
@@ -22,6 +22,22 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<Map<string, number> | null>(null);
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
+
+  // Ordered list of cover indices that match the current search (chronological)
+  const searchResultIndices = useMemo(() => {
+    if (!searchResults || searchResults.size === 0) return [];
+    const indices: number[] = [];
+    for (let i = 0; i < covers.length; i++) {
+      if (searchResults.has(covers[i].id)) indices.push(i);
+    }
+    return indices;
+  }, [searchResults, covers]);
+
+  // Current position within search results (-1 = none selected)
+  const searchResultPos = useMemo(() => {
+    if (searchResultIndices.length === 0 || !selectedCover) return -1;
+    return searchResultIndices.indexOf(selectedIndex);
+  }, [searchResultIndices, selectedIndex, selectedCover]);
 
   // Load cover data
   useEffect(() => {
@@ -51,7 +67,6 @@ export default function App() {
       if (cover) {
         const idx = covers.indexOf(cover);
         setFlyToIndex(idx);
-        // Open modal after fly animation completes
         setSelectedCover(cover);
         setSelectedIndex(idx);
       }
@@ -91,27 +106,60 @@ export default function App() {
     setSelectedCover(null);
   }, []);
 
+  // Navigate: search results when search is active, otherwise all covers
   const handlePrev = useCallback(() => {
-    if (selectedIndex > 0) {
+    if (searchResultIndices.length > 0) {
+      const pos = searchResultIndices.indexOf(selectedIndex);
+      if (pos > 0) {
+        const newIndex = searchResultIndices[pos - 1];
+        setSelectedIndex(newIndex);
+        setSelectedCover(covers[newIndex]);
+        setFlyToIndex(newIndex);
+      }
+    } else if (selectedIndex > 0) {
       const newIndex = selectedIndex - 1;
       setSelectedIndex(newIndex);
       setSelectedCover(covers[newIndex]);
       setFlyToIndex(newIndex);
     }
-  }, [selectedIndex, covers]);
+  }, [selectedIndex, covers, searchResultIndices]);
 
   const handleNext = useCallback(() => {
-    if (selectedIndex < covers.length - 1) {
+    if (searchResultIndices.length > 0) {
+      const pos = searchResultIndices.indexOf(selectedIndex);
+      if (pos < searchResultIndices.length - 1) {
+        const newIndex = searchResultIndices[pos + 1];
+        setSelectedIndex(newIndex);
+        setSelectedCover(covers[newIndex]);
+        setFlyToIndex(newIndex);
+      }
+    } else if (selectedIndex < covers.length - 1) {
       const newIndex = selectedIndex + 1;
       setSelectedIndex(newIndex);
       setSelectedCover(covers[newIndex]);
       setFlyToIndex(newIndex);
     }
-  }, [selectedIndex, covers]);
+  }, [selectedIndex, covers, searchResultIndices]);
 
   if (covers.length === 0) {
     return null; // Loading
   }
+
+  // Build result label for modal: "Treffer 3 von 15"
+  const resultLabel =
+    searchResultIndices.length > 0 && searchResultPos >= 0
+      ? `Treffer ${searchResultPos + 1} von ${searchResultIndices.length}`
+      : undefined;
+
+  // Determine if prev/next are available
+  const hasPrev =
+    searchResultIndices.length > 0
+      ? searchResultPos > 0
+      : selectedIndex > 0;
+  const hasNext =
+    searchResultIndices.length > 0
+      ? searchResultPos >= 0 && searchResultPos < searchResultIndices.length - 1
+      : selectedIndex < covers.length - 1;
 
   return (
     <div className="app">
@@ -159,6 +207,9 @@ export default function App() {
         onClose={handleCloseModal}
         onPrev={handlePrev}
         onNext={handleNext}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+        resultLabel={resultLabel}
       />
     </div>
   );

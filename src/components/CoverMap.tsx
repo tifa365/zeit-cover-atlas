@@ -291,7 +291,7 @@ export default function CoverMap({
     const [lng, lat] = coverToGridCoords(flyToIndex);
     map.current.flyTo({
       center: [lng, lat],
-      zoom: 13,
+      zoom: 12,
       duration: 1500,
     });
     map.current.once("moveend", () => {
