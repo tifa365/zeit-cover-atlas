@@ -162,19 +162,27 @@
   }
 }
 
-/* Archive link */
+/* Archive link — overlay button at bottom of cover image */
 .modal-link {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: block;
-  margin-top: 0.75rem;
+  padding: 0.625rem 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  color: #fff;
   font-family: var(--zeit-font-sans, "TabletGothic", "Helvetica Neue", Helvetica, Arial, sans-serif);
   font-size: 0.875rem;
-  color: var(--zeit-color-red, #ec5150);
+  text-align: center;
   text-decoration: none;
-  border-bottom: 1px solid currentColor;
-  padding-bottom: 1px;
-  transition: opacity 0.2s;
+  letter-spacing: 0.02em;
+  pointer-events: auto;
+  transition: background 0.2s;
+  border-radius: 0 0 0.25rem 0.25rem;
 }
 
 .modal-link:hover {
-  opacity: 0.8;
+  background: rgba(0, 0, 0, 0.75);
 }

@@ -120,6 +120,14 @@ export default function CoverModal({
                     backgroundPosition: `${bgX}px ${bgY}px`,
                   }}
                 />
+                <a
+                  href={getArchiveUrl(cover.issue)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="modal-link"
+                >
+                  Ausgabe lesen →
+                </a>
               </div>
             </figure>
 
@@ -142,15 +150,6 @@ export default function CoverModal({
                 <path d="M4 1L10 7L4 13" stroke="currentColor" strokeWidth="1.5" />
               </svg>
             </button>
-
-            <a
-              href={getArchiveUrl(cover.issue)}
-              target="_blank"
-              rel="noreferrer"
-              className="modal-link"
-            >
-              Texte aus dieser Ausgabe online lesen
-            </a>
           </motion.div>
         </motion.div>
       )}
