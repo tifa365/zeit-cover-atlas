@@ -3,6 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "../styles/map.css";
 import type { CoverEntry } from "../utils/coverLookup";
+import { formatGermanDate } from "../utils/coverLookup";
 import { getCoverUrl } from "../utils/coverUrl";
 
 // Grid layout constants – keep near equator to avoid Mercator distortion
@@ -46,6 +47,9 @@ export default function CoverMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [hoveredCover, setHoveredCover] = useState<{
+    issue: string; start: string; x: number; y: number;
+  } | null>(null);
 
   // Search state machine: idle → settling → flying → idle
   const searchPhase = useRef<"idle" | "settling" | "flying">("idle");
@@ -262,12 +266,28 @@ export default function CoverMap({
       }
     });
 
-    // Cursor pointer on hover
-    m.on("mouseenter", "cover-rects-fill", () => {
+    // Hover tooltip — use mousemove to track position and feature
+    let hoveredId: string | null = null;
+    m.on("mousemove", "cover-rects-fill", (e) => {
       m.getCanvas().style.cursor = "pointer";
+      const props = e.features?.[0]?.properties;
+      if (!props) return;
+      hoveredId = props.id as string;
+      setHoveredCover({
+        issue: props.issue as string,
+        start: props.start as string,
+        x: e.point.x,
+        y: e.point.y,
+      });
     });
     m.on("mouseleave", "cover-rects-fill", () => {
       m.getCanvas().style.cursor = "";
+      hoveredId = null;
+      setHoveredCover(null);
+    });
+    m.on("mousedown", "cover-rects-fill", () => {
+      hoveredId = null;
+      setHoveredCover(null);
     });
 
     // Swap in hi-res on move end — never while search is active
@@ -442,6 +462,19 @@ export default function CoverMap({
           zIndex: 1,
         }}
       />
+      {hoveredCover && (() => {
+        const [y, n] = hoveredCover.issue.split("/");
+        return (
+          <div
+            className="cover-tooltip"
+            style={{ left: hoveredCover.x, top: hoveredCover.y }}
+          >
+            <strong>Ausgabe {n} / {y}</strong>
+            <span>{formatGermanDate(hoveredCover.start)}</span>
+            <span className="cover-tooltip-hint">Details bei Klick auf Cover</span>
+          </div>
+        );
+      })()}
       {map.current && <ZoomControls map={map.current} />}
     </div>
   );

@@ -29,6 +29,39 @@
   font-size: var(--zeit-font-16);
 }
 
+/* Hover tooltip */
+.cover-tooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
+  background: #232323;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  color: #fff;
+  font-family: var(--zeit-font-sans, "TabletGothic", "Helvetica Neue", Helvetica, Arial, sans-serif);
+  pointer-events: none;
+  z-index: 9999;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.cover-tooltip strong {
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.cover-tooltip span {
+  font-size: 0.8125rem;
+}
+
+.cover-tooltip-hint {
+  color: #999;
+  font-size: 0.75rem !important;
+  margin-top: 0.125rem;
+}
+
 /* Zoom controls */
 .zoom-controls {
   position: absolute;
