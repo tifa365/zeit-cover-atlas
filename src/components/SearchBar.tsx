@@ -20,7 +20,7 @@ export default function SearchBar({
       const value = e.target.value;
       setQuery(value);
       clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => onSearch(value), 300);
+      timerRef.current = setTimeout(() => onSearch(value), 800);
     },
     [onSearch]
   );

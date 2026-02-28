@@ -47,6 +47,14 @@ export default function CoverMap({
   const map = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
 
+  // Search state machine: idle → settling → flying → idle
+  const searchPhase = useRef<"idle" | "settling" | "flying">("idle");
+  const searchTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const searchActiveRef = useRef(false);
+
+  // Fade-cut overlay for flicker-free "fly" to search results
+  const fadeOverlayRef = useRef<HTMLDivElement>(null);
+
   // Initialize map
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -82,7 +90,7 @@ export default function CoverMap({
             id: "background",
             type: "background",
             paint: {
-              "background-color": "#1a1a1a",
+              "background-color": "#000",
             },
           },
         ],
@@ -97,6 +105,10 @@ export default function CoverMap({
 
     m.on("load", () => {
       // Clickable cover rectangles (invisible, on top for hit-testing)
+      // Extend each rect by GAP/2 so adjacent polygons overlap,
+      // preventing bright sprite bleed-through in gap areas when dimmed
+      const halfW = (CELL_W + GAP) / 2;
+      const halfH = (CELL_H + GAP) / 2;
       const rectFeatures = covers.map((cover, i) => {
         const [lng, lat] = coverToGridCoords(i);
         return {
@@ -105,11 +117,11 @@ export default function CoverMap({
           geometry: {
             type: "Polygon" as const,
             coordinates: [[
-              [lng - CELL_W / 2, lat - CELL_H / 2],
-              [lng + CELL_W / 2, lat - CELL_H / 2],
-              [lng + CELL_W / 2, lat + CELL_H / 2],
-              [lng - CELL_W / 2, lat + CELL_H / 2],
-              [lng - CELL_W / 2, lat - CELL_H / 2],
+              [lng - halfW, lat - halfH],
+              [lng + halfW, lat - halfH],
+              [lng + halfW, lat + halfH],
+              [lng - halfW, lat + halfH],
+              [lng - halfW, lat - halfH],
             ]],
           },
         };
@@ -118,7 +130,6 @@ export default function CoverMap({
       m.addSource("cover-rects", {
         type: "geojson",
         data: { type: "FeatureCollection", features: rectFeatures },
-        promoteId: "id",
       });
 
       // Sprite image covering the entire grid — one load for all 4187 covers
@@ -152,6 +163,53 @@ export default function CoverMap({
         paint: { "raster-fade-duration": 0 },
       });
 
+      // Black edge strips to hide raster interpolation artifacts at sprite borders
+      const EDGE_W = GAP * 3; // thin strip width
+      m.addSource("edge-strips", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [
+            // Left edge strip
+            {
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "Polygon",
+                coordinates: [[
+                  [spriteLeft - EDGE_W, spriteTop + EDGE_W],
+                  [spriteLeft + EDGE_W, spriteTop + EDGE_W],
+                  [spriteLeft + EDGE_W, spriteBottom - EDGE_W],
+                  [spriteLeft - EDGE_W, spriteBottom - EDGE_W],
+                  [spriteLeft - EDGE_W, spriteTop + EDGE_W],
+                ]],
+              },
+            },
+            // Right edge strip
+            {
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "Polygon",
+                coordinates: [[
+                  [spriteRight - EDGE_W, spriteTop + EDGE_W],
+                  [spriteRight + EDGE_W, spriteTop + EDGE_W],
+                  [spriteRight + EDGE_W, spriteBottom - EDGE_W],
+                  [spriteRight - EDGE_W, spriteBottom - EDGE_W],
+                  [spriteRight - EDGE_W, spriteTop + EDGE_W],
+                ]],
+              },
+            },
+          ],
+        },
+      });
+      m.addLayer({
+        id: "edge-strips",
+        type: "fill",
+        source: "edge-strips",
+        paint: { "fill-color": "#000", "fill-opacity": 1, "fill-antialias": false },
+      });
+
       // Dim layer: darkens non-matching covers during search
       m.addLayer({
         id: "cover-rects-dim",
@@ -159,14 +217,9 @@ export default function CoverMap({
         source: "cover-rects",
         paint: {
           "fill-color": "#000",
-          // When search active: feature-state "dimmed" controls opacity
-          // Default 0 (transparent) — set to 0.7 for non-matching covers
-          "fill-opacity": [
-            "coalesce",
-            ["feature-state", "dimmed"],
-            0,
-          ],
-          "fill-opacity-transition": { duration: 500, delay: 0 },
+          "fill-antialias": false,
+          "fill-opacity": ["coalesce", ["get", "dimmed"], 0],
+          "fill-opacity-transition": { duration: 600, delay: 0 },
         },
       });
 
@@ -176,13 +229,9 @@ export default function CoverMap({
         type: "line",
         source: "cover-rects",
         paint: {
-          "line-color": "#ec5150", // --zeit-color-red
+          "line-color": "#ec5150",
           "line-width": 2,
-          "line-opacity": [
-            "coalesce",
-            ["feature-state", "highlighted"],
-            0,
-          ],
+          "line-opacity": ["coalesce", ["get", "highlighted"], 0],
           "line-opacity-transition": { duration: 500, delay: 0 },
         },
       });
@@ -221,9 +270,11 @@ export default function CoverMap({
       m.getCanvas().style.cursor = "";
     });
 
-    // Swap in hi-res on move
+    // Swap in hi-res on move end — never while search is active
     m.on("moveend", () => {
-      loadHiResCovers(m, covers);
+      if (!searchActiveRef.current) {
+        loadHiResCovers(m, covers);
+      }
     });
 
     map.current = m;
@@ -248,36 +299,149 @@ export default function CoverMap({
     });
   }, [flyToIndex, mapLoaded]);
 
-  // Apply search highlight / dim via feature-state
+  // ── Search state machine: idle → settling → flying → idle ──
+  //
+  // 1. Search results arrive → apply dim/highlight (settling)
+  // 2. Wait for fade to complete (600ms transition + 400ms extra)
+  // 3. Start flyTo if needed (flying) — ZERO style/source changes
+  // 4. On moveend → back to idle, resume normal loading
+  //
   useEffect(() => {
+    // Clear any pending timers from previous search
+    for (const t of searchTimers.current) clearTimeout(t);
+    searchTimers.current = [];
+
     if (!map.current || !mapLoaded || !map.current.isStyleLoaded()) return;
     const m = map.current;
-    const source = "cover-rects";
 
-    if (highlightedCovers === null) {
-      // No active search — clear all feature states
-      for (let i = 0; i < covers.length; i++) {
-        m.setFeatureState(
-          { source, id: covers[i].id },
-          { dimmed: 0, highlighted: 0 }
-        );
+    // Helper: toggle visibility of all loaded raster layers
+    function setRasterLayersVisible(visible: boolean) {
+      const val = visible ? "visible" : "none";
+      for (const r of rowSpritesLoaded) {
+        const id = `row-sprite-${r}`;
+        if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", val);
       }
-    } else {
-      // Search active — dim non-matching, highlight matching
-      for (let i = 0; i < covers.length; i++) {
-        const id = covers[i].id;
-        const isMatch = highlightedCovers.has(id);
-        m.setFeatureState(
-          { source, id },
-          { dimmed: isMatch ? 0 : 0.7, highlighted: isMatch ? 1 : 0 }
-        );
+      for (const i of hiResLoaded) {
+        const id = `cover-hires-${i}`;
+        if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", val);
       }
     }
+
+    if (highlightedCovers === null || highlightedCovers.size === 0) {
+      // ── IDLE: clear search ──
+      searchActiveRef.current = false;
+      searchPhase.current = "idle";
+      m.setPaintProperty("cover-rects-dim", "fill-opacity", 0);
+      m.setPaintProperty("cover-rects-highlight", "line-opacity", 0);
+      setRasterLayersVisible(true); // show them again
+      loadHiResCovers(m, covers);
+      return;
+    }
+
+    // ── SETTLING: apply dim/highlight, hide raster layers ──
+    searchActiveRef.current = true;
+    searchPhase.current = "settling";
+    setRasterLayersVisible(false); // hide — only base sprite remains
+
+    const matchIds = Array.from(highlightedCovers.keys());
+
+    m.setPaintProperty("cover-rects-dim", "fill-opacity", [
+      "case",
+      ["in", ["get", "id"], ["literal", matchIds]],
+      0,
+      0.7,
+    ]);
+    m.setPaintProperty("cover-rects-highlight", "line-opacity", [
+      "case",
+      ["in", ["get", "id"], ["literal", matchIds]],
+      1,
+      0,
+    ]);
+
+    // Wait for the fade transition to fully complete before anything else
+    const SETTLE_DELAY = 1000; // 600ms transition + 400ms extra cushion
+
+    const settleTimer = setTimeout(() => {
+      if (!map.current || searchPhase.current !== "settling") return;
+
+      // Check if any match is already visible — if so, skip fly
+      const bounds = map.current.getBounds();
+      let firstMatchIndex = -1;
+      let anyVisible = false;
+
+      for (let i = 0; i < covers.length; i++) {
+        if (!highlightedCovers.has(covers[i].id)) continue;
+        if (firstMatchIndex === -1) firstMatchIndex = i;
+        const [lng, lat] = coverToGridCoords(i);
+        if (
+          lng >= bounds.getWest() && lng <= bounds.getEast() &&
+          lat >= bounds.getSouth() && lat <= bounds.getNorth()
+        ) {
+          anyVisible = true;
+          break;
+        }
+      }
+
+      if (anyVisible || firstMatchIndex === -1) {
+        // Matches already visible — stay put, go idle
+        searchPhase.current = "idle";
+        return;
+      }
+
+      // ── FLYING: fade-cut-jump (no animated camera = no tile churn) ──
+      searchPhase.current = "flying";
+      const overlay = fadeOverlayRef.current;
+      if (!overlay || !map.current) {
+        searchPhase.current = "idle";
+        return;
+      }
+
+      // 1. Fade overlay to opaque black
+      overlay.style.transition = "opacity 300ms ease-out";
+      overlay.style.opacity = "1";
+
+      const [lng, lat] = coverToGridCoords(firstMatchIndex);
+
+      const fadeInTimer = setTimeout(() => {
+        if (!map.current) return;
+
+        // 2. Instant jump while overlay hides everything
+        map.current.jumpTo({ center: [lng, lat] });
+
+        // 3. Wait for tiles to settle, then fade overlay out
+        map.current.once("idle", () => {
+          if (!overlay) return;
+          overlay.style.transition = "opacity 500ms ease-in";
+          overlay.style.opacity = "0";
+          searchPhase.current = "idle";
+        });
+      }, 350); // slightly longer than fade duration to ensure fully opaque
+
+      searchTimers.current.push(fadeInTimer);
+    }, SETTLE_DELAY);
+
+    searchTimers.current.push(settleTimer);
+
+    return () => {
+      for (const t of searchTimers.current) clearTimeout(t);
+      searchTimers.current = [];
+    };
   }, [highlightedCovers, mapLoaded, covers]);
 
   return (
     <div className="map-container">
       <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
+      <div
+        ref={fadeOverlayRef}
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "#000",
+          opacity: 0,
+          pointerEvents: "none",
+          zIndex: 1,
+        }}
+      />
       {map.current && <ZoomControls map={map.current} />}
     </div>
   );

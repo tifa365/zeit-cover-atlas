@@ -1,7 +1,13 @@
 /* MapLibre overrides and custom controls */
 .map-container {
+  position: relative;
   width: 100%;
   height: 100%;
+  background: #000;
+}
+
+.map-container canvas {
+  background: #000 !important;
 }
 
 .map-container .maplibregl-canvas {
