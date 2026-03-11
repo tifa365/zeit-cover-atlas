@@ -4,13 +4,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "../styles/map.css";
 import type { CoverEntry } from "../utils/coverLookup";
 import { formatGermanDate } from "../utils/coverLookup";
-import { getCoverUrl } from "../utils/coverUrl";
-
-// Grid layout constants – keep near equator to avoid Mercator distortion
-const COLS = 53; // ~weeks per year
-const CELL_W = 0.3; // longitude units per cell
-const CELL_H = 0.429; // latitude units per cell (7:10 aspect ratio)
-const GAP = 0.003; // hairline gap
+import { COLS, CELL_W, CELL_H, GAP, TOTAL_ROWS, GRID_TOP_LAT, coverToGridCoords } from "../utils/grid";
+import { loadHiResCovers } from "../utils/spriteLoader";
+import { SearchFlightController } from "../utils/searchFlight";
 
 interface CoverMapProps {
   covers: CoverEntry[];
@@ -19,21 +15,6 @@ interface CoverMapProps {
   onFlyComplete?: () => void;
   highlightedCovers: Map<string, number> | null; // id → score, null = no search active
   onMapReady?: (map: maplibregl.Map) => void;
-}
-
-// Pre-compute grid origin so the grid is centred at lat=0
-const TOTAL_ROWS = 79; // ceil(4187 / 53)
-const GRID_H = TOTAL_ROWS * (CELL_H + GAP);
-const GRID_TOP_LAT = GRID_H / 2; // ≈ +17 (well within low-distortion zone)
-
-export const GRID_COLS = COLS;
-
-export function coverToGridCoords(index: number): [number, number] {
-  const col = index % COLS;
-  const row = Math.floor(index / COLS);
-  const lng = col * (CELL_W + GAP);
-  const lat = GRID_TOP_LAT - row * (CELL_H + GAP);
-  return [lng, lat];
 }
 
 export default function CoverMap({
@@ -51,10 +32,8 @@ export default function CoverMap({
     issue: string; start: string; x: number; y: number;
   } | null>(null);
 
-  // Search state machine: idle → settling → flying → idle
-  const searchPhase = useRef<"idle" | "settling" | "flying">("idle");
-  const searchTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const searchActiveRef = useRef(false);
+  // Search state machine controller
+  const searchFlight = useRef(new SearchFlightController());
 
   // Fade-cut overlay for flicker-free "fly" to search results
   const fadeOverlayRef = useRef<HTMLDivElement>(null);
@@ -292,7 +271,7 @@ export default function CoverMap({
 
     // Swap in hi-res on move end — never while search is active
     m.on("moveend", () => {
-      if (!searchActiveRef.current) {
+      if (!searchFlight.current.isActive) {
         loadHiResCovers(m, covers);
       }
     });
@@ -319,132 +298,21 @@ export default function CoverMap({
     });
   }, [flyToIndex, mapLoaded]);
 
-  // ── Search state machine: idle → settling → flying → idle ──
-  //
-  // 1. Search results arrive → apply dim/highlight (settling)
-  // 2. Wait for fade to complete (600ms transition + 400ms extra)
-  // 3. Start flyTo if needed (flying) — ZERO style/source changes
-  // 4. On moveend → back to idle, resume normal loading
-  //
+  // Search state machine — delegated to SearchFlightController
   useEffect(() => {
-    // Clear any pending timers from previous search
-    for (const t of searchTimers.current) clearTimeout(t);
-    searchTimers.current = [];
+    searchFlight.current.reset();
 
     if (!map.current || !mapLoaded || !map.current.isStyleLoaded()) return;
-    const m = map.current;
 
-    // Helper: toggle visibility of all loaded raster layers
-    function setRasterLayersVisible(visible: boolean) {
-      const val = visible ? "visible" : "none";
-      for (const r of rowSpritesLoaded) {
-        const id = `row-sprite-${r}`;
-        if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", val);
-      }
-      for (const i of hiResLoaded) {
-        const id = `cover-hires-${i}`;
-        if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", val);
-      }
-    }
-
-    if (highlightedCovers === null || highlightedCovers.size === 0) {
-      // ── IDLE: clear search ──
-      searchActiveRef.current = false;
-      searchPhase.current = "idle";
-      m.setPaintProperty("cover-rects-dim", "fill-opacity", 0);
-      m.setPaintProperty("cover-rects-highlight", "line-opacity", 0);
-      setRasterLayersVisible(true); // show them again
-      loadHiResCovers(m, covers);
-      return;
-    }
-
-    // ── SETTLING: apply dim/highlight, hide raster layers ──
-    searchActiveRef.current = true;
-    searchPhase.current = "settling";
-    setRasterLayersVisible(false); // hide — only base sprite remains
-
-    const matchIds = Array.from(highlightedCovers.keys());
-
-    m.setPaintProperty("cover-rects-dim", "fill-opacity", [
-      "case",
-      ["in", ["get", "id"], ["literal", matchIds]],
-      0,
-      0.7,
-    ]);
-    m.setPaintProperty("cover-rects-highlight", "line-opacity", [
-      "case",
-      ["in", ["get", "id"], ["literal", matchIds]],
-      1,
-      0,
-    ]);
-
-    // Wait for the fade transition to fully complete before anything else
-    const SETTLE_DELAY = 1000; // 600ms transition + 400ms extra cushion
-
-    const settleTimer = setTimeout(() => {
-      if (!map.current || searchPhase.current !== "settling") return;
-
-      // Check if any match is already visible — if so, skip fly
-      const bounds = map.current.getBounds();
-      let firstMatchIndex = -1;
-      let anyVisible = false;
-
-      for (let i = 0; i < covers.length; i++) {
-        if (!highlightedCovers.has(covers[i].id)) continue;
-        if (firstMatchIndex === -1) firstMatchIndex = i;
-        const [lng, lat] = coverToGridCoords(i);
-        if (
-          lng >= bounds.getWest() && lng <= bounds.getEast() &&
-          lat >= bounds.getSouth() && lat <= bounds.getNorth()
-        ) {
-          anyVisible = true;
-          break;
-        }
-      }
-
-      if (anyVisible || firstMatchIndex === -1) {
-        // Matches already visible — stay put, go idle
-        searchPhase.current = "idle";
-        return;
-      }
-
-      // ── FLYING: fade-cut-jump (no animated camera = no tile churn) ──
-      searchPhase.current = "flying";
-      const overlay = fadeOverlayRef.current;
-      if (!overlay || !map.current) {
-        searchPhase.current = "idle";
-        return;
-      }
-
-      // 1. Fade overlay to opaque black
-      overlay.style.transition = "opacity 300ms ease-out";
-      overlay.style.opacity = "1";
-
-      const [lng, lat] = coverToGridCoords(firstMatchIndex);
-
-      const fadeInTimer = setTimeout(() => {
-        if (!map.current) return;
-
-        // 2. Instant jump while overlay hides everything
-        map.current.jumpTo({ center: [lng, lat] });
-
-        // 3. Wait for tiles to settle, then fade overlay out
-        map.current.once("idle", () => {
-          if (!overlay) return;
-          overlay.style.transition = "opacity 500ms ease-in";
-          overlay.style.opacity = "0";
-          searchPhase.current = "idle";
-        });
-      }, 350); // slightly longer than fade duration to ensure fully opaque
-
-      searchTimers.current.push(fadeInTimer);
-    }, SETTLE_DELAY);
-
-    searchTimers.current.push(settleTimer);
+    searchFlight.current.update(
+      map.current,
+      highlightedCovers,
+      covers,
+      fadeOverlayRef.current
+    );
 
     return () => {
-      for (const t of searchTimers.current) clearTimeout(t);
-      searchTimers.current = [];
+      searchFlight.current.reset();
     };
   }, [highlightedCovers, mapLoaded, covers]);
 
@@ -515,122 +383,3 @@ function ZoomControls({ map }: { map: maplibregl.Map }) {
   );
 }
 
-/** Track loaded row sprites and hi-res individual covers */
-const rowSpritesLoaded = new Set<number>();
-const hiResLoaded = new Set<number>();
-
-/**
- * Three-tier image loading:
- * 1) Full-grid sprite (always on) — 60×86 thumbs, ~4.4MB single load
- * 2) Row sprites (zoom ≥ 8) — 120×172 (2×), ~280KB each, only visible rows
- * 3) Full-res individual covers (zoom ≥ 11) — only visible cells
- */
-function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]) {
-  const bounds = map.getBounds();
-  const zoom = map.getZoom();
-
-  const rowStep = CELL_H + GAP;
-  const colStep = CELL_W + GAP;
-  const lngSpan = bounds.getEast() - bounds.getWest();
-  const latSpan = bounds.getNorth() - bounds.getSouth();
-  const marginLat = latSpan * 0.5;
-  const marginLng = lngSpan * 0.5;
-  const minLat = bounds.getSouth() - marginLat;
-  const maxLat = bounds.getNorth() + marginLat;
-  const minLng = bounds.getWest() - marginLng;
-  const maxLng = bounds.getEast() + marginLng;
-
-  const minRow = Math.max(0, Math.floor((GRID_TOP_LAT - maxLat) / rowStep));
-  const maxRow = Math.min(TOTAL_ROWS - 1, Math.ceil((GRID_TOP_LAT - minLat) / rowStep));
-
-  // --- Tier 2: Row sprites (2× resolution) — always load for visible rows ---
-  {
-    // Remove off-screen row sprites
-    for (const r of rowSpritesLoaded) {
-      if (r < minRow || r > maxRow) {
-        const id = `row-sprite-${r}`;
-        if (map.getLayer(id)) map.removeLayer(id);
-        if (map.getSource(id)) map.removeSource(id);
-        rowSpritesLoaded.delete(r);
-      }
-    }
-    // Add visible row sprites
-    for (let r = minRow; r <= maxRow; r++) {
-      if (rowSpritesLoaded.has(r)) continue;
-      const [, rowLat] = coverToGridCoords(r * COLS);
-      const [lastColLng] = coverToGridCoords(r * COLS + COLS - 1);
-      const id = `row-sprite-${r}`;
-      map.addSource(id, {
-        type: "image",
-        url: `/row-sprites/row-${r}.webp`,
-        coordinates: [
-          [0 - CELL_W / 2, rowLat + CELL_H / 2],
-          [lastColLng + CELL_W / 2, rowLat + CELL_H / 2],
-          [lastColLng + CELL_W / 2, rowLat - CELL_H / 2],
-          [0 - CELL_W / 2, rowLat - CELL_H / 2],
-        ],
-      });
-      map.addLayer({ id, type: "raster", source: id, paint: { "raster-fade-duration": 200 } }, "cover-rects-dim");
-      rowSpritesLoaded.add(r);
-    }
-  }
-
-  // --- Tier 3: Full-res individual covers ---
-  if (zoom < 11) {
-    for (const i of hiResLoaded) {
-      const id = `cover-hires-${i}`;
-      if (map.getLayer(id)) map.removeLayer(id);
-      if (map.getSource(id)) map.removeSource(id);
-    }
-    hiResLoaded.clear();
-    return;
-  }
-
-  // Remove off-screen hi-res
-  for (const i of hiResLoaded) {
-    const [lng, lat] = coverToGridCoords(i);
-    if (
-      lng + CELL_W / 2 < minLng || lng - CELL_W / 2 > maxLng ||
-      lat + CELL_H / 2 < minLat || lat - CELL_H / 2 > maxLat
-    ) {
-      const id = `cover-hires-${i}`;
-      if (map.getLayer(id)) map.removeLayer(id);
-      if (map.getSource(id)) map.removeSource(id);
-      hiResLoaded.delete(i);
-    }
-  }
-
-  // Add hi-res for visible cells
-  const minCol = Math.max(0, Math.floor(minLng / colStep));
-  const maxCol = Math.min(COLS - 1, Math.ceil(maxLng / colStep));
-
-  for (let row = minRow; row <= maxRow; row++) {
-    for (let col = minCol; col <= maxCol; col++) {
-      const i = row * COLS + col;
-      if (i >= covers.length || hiResLoaded.has(i)) continue;
-
-      const [lng, lat] = coverToGridCoords(i);
-      const sourceId = `cover-hires-${i}`;
-
-      map.addSource(sourceId, {
-        type: "image",
-        url: getCoverUrl(covers[i].id),
-        coordinates: [
-          [lng - CELL_W / 2, lat + CELL_H / 2],
-          [lng + CELL_W / 2, lat + CELL_H / 2],
-          [lng + CELL_W / 2, lat - CELL_H / 2],
-          [lng - CELL_W / 2, lat - CELL_H / 2],
-        ],
-      });
-
-      map.addLayer({
-        id: sourceId,
-        type: "raster",
-        source: sourceId,
-        paint: { "raster-fade-duration": 300 },
-      }, "cover-rects-dim");
-
-      hiResLoaded.add(i);
-    }
-  }
-}

@@ -8,6 +8,15 @@ import SearchMiniMap from "./components/SearchMiniMap";
 import { findCoverByDate } from "./utils/coverLookup";
 import type { CoverEntry } from "./utils/coverLookup";
 import { initSearchIndex, searchCovers } from "./utils/searchIndex";
+import {
+  buildSearchResultIndices,
+  getSearchResultPos,
+  navigatePrev,
+  navigateNext,
+  buildResultLabel,
+  computeHasPrev,
+  computeHasNext,
+} from "./utils/searchSession";
 import "./styles/app.css";
 
 const MIN_DATE = new Date(1946, 1, 21); // Feb 21, 1946
@@ -23,21 +32,15 @@ export default function App() {
   const [searchResultCount, setSearchResultCount] = useState<number | null>(null);
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
 
-  // Ordered list of cover indices that match the current search (chronological)
-  const searchResultIndices = useMemo(() => {
-    if (!searchResults || searchResults.size === 0) return [];
-    const indices: number[] = [];
-    for (let i = 0; i < covers.length; i++) {
-      if (searchResults.has(covers[i].id)) indices.push(i);
-    }
-    return indices;
-  }, [searchResults, covers]);
+  const searchResultIndices = useMemo(
+    () => buildSearchResultIndices(covers, searchResults),
+    [searchResults, covers]
+  );
 
-  // Current position within search results (-1 = none selected)
-  const searchResultPos = useMemo(() => {
-    if (searchResultIndices.length === 0 || !selectedCover) return -1;
-    return searchResultIndices.indexOf(selectedIndex);
-  }, [searchResultIndices, selectedIndex, selectedCover]);
+  const searchResultPos = useMemo(
+    () => getSearchResultPos(searchResultIndices, selectedIndex, !!selectedCover),
+    [searchResultIndices, selectedIndex, selectedCover]
+  );
 
   // Load cover data
   useEffect(() => {
@@ -108,16 +111,8 @@ export default function App() {
 
   // Navigate: search results when search is active, otherwise all covers
   const handlePrev = useCallback(() => {
-    if (searchResultIndices.length > 0) {
-      const pos = searchResultIndices.indexOf(selectedIndex);
-      if (pos > 0) {
-        const newIndex = searchResultIndices[pos - 1];
-        setSelectedIndex(newIndex);
-        setSelectedCover(covers[newIndex]);
-        setFlyToIndex(newIndex);
-      }
-    } else if (selectedIndex > 0) {
-      const newIndex = selectedIndex - 1;
+    const newIndex = navigatePrev(selectedIndex, covers.length, searchResultIndices);
+    if (newIndex !== null) {
       setSelectedIndex(newIndex);
       setSelectedCover(covers[newIndex]);
       setFlyToIndex(newIndex);
@@ -125,16 +120,8 @@ export default function App() {
   }, [selectedIndex, covers, searchResultIndices]);
 
   const handleNext = useCallback(() => {
-    if (searchResultIndices.length > 0) {
-      const pos = searchResultIndices.indexOf(selectedIndex);
-      if (pos < searchResultIndices.length - 1) {
-        const newIndex = searchResultIndices[pos + 1];
-        setSelectedIndex(newIndex);
-        setSelectedCover(covers[newIndex]);
-        setFlyToIndex(newIndex);
-      }
-    } else if (selectedIndex < covers.length - 1) {
-      const newIndex = selectedIndex + 1;
+    const newIndex = navigateNext(selectedIndex, covers.length, searchResultIndices);
+    if (newIndex !== null) {
       setSelectedIndex(newIndex);
       setSelectedCover(covers[newIndex]);
       setFlyToIndex(newIndex);
@@ -145,21 +132,9 @@ export default function App() {
     return null; // Loading
   }
 
-  // Build result label for modal: "Treffer 3 von 15"
-  const resultLabel =
-    searchResultIndices.length > 0 && searchResultPos >= 0
-      ? `Treffer ${searchResultPos + 1} von ${searchResultIndices.length}`
-      : undefined;
-
-  // Determine if prev/next are available
-  const hasPrev =
-    searchResultIndices.length > 0
-      ? searchResultPos > 0
-      : selectedIndex > 0;
-  const hasNext =
-    searchResultIndices.length > 0
-      ? searchResultPos >= 0 && searchResultPos < searchResultIndices.length - 1
-      : selectedIndex < covers.length - 1;
+  const resultLabel = buildResultLabel(searchResultIndices, searchResultPos);
+  const hasPrev = computeHasPrev(selectedIndex, searchResultIndices, searchResultPos);
+  const hasNext = computeHasNext(selectedIndex, covers.length, searchResultIndices, searchResultPos);
 
   return (
     <div className="app">

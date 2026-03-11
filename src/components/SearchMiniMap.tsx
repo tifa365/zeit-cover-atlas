@@ -1,16 +1,8 @@
 import { useRef, useEffect, useState } from "react";
 import maplibregl from "maplibre-gl";
 import type { CoverEntry } from "../utils/coverLookup";
-import { coverToGridCoords, GRID_COLS } from "./CoverMap";
+import { COLS, CELL_W, CELL_H, TOTAL_ROWS, coverToGridCoords } from "../utils/grid";
 import "../styles/search-minimap.css";
-
-// Grid constants (must match CoverMap)
-const CELL_W = 0.3;
-const CELL_H = 0.429;
-const GAP = 0.003;
-const TOTAL_ROWS = 79;
-const GRID_H = TOTAL_ROWS * (CELL_H + GAP);
-const GRID_TOP_LAT = GRID_H / 2;
 
 interface SearchMiniMapProps {
   results: Map<string, number> | null;
@@ -31,9 +23,9 @@ export default function SearchMiniMap({
 
   // Compute full grid bounds
   const [lng0] = coverToGridCoords(0);
-  const [lngLast] = coverToGridCoords(GRID_COLS - 1);
+  const [lngLast] = coverToGridCoords(COLS - 1);
   const [, latTop] = coverToGridCoords(0);
-  const [, latBot] = coverToGridCoords((TOTAL_ROWS - 1) * GRID_COLS);
+  const [, latBot] = coverToGridCoords((TOTAL_ROWS - 1) * COLS);
   const gridLeft = lng0 - CELL_W / 2;
   const gridRight = lngLast + CELL_W / 2;
   const gridTop = latTop + CELL_H / 2;
