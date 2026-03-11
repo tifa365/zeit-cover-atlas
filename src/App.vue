@@ -18,6 +18,8 @@ import {
 } from './utils/searchSession'
 import './styles/app.css'
 
+const coverMapRef = ref<InstanceType<typeof CoverMap> | null>(null)
+
 const covers = ref<CoverEntry[]>([])
 const selectedCover = ref<CoverEntry | null>(null)
 const selectedIndex = ref(0)
@@ -26,6 +28,7 @@ const searchReady = ref(false)
 const searchResults = ref<Map<string, number> | null>(null)
 const searchResultCount = ref<number | null>(null)
 const mapInstance = shallowRef<maplibregl.Map | null>(null)
+let preModalZoom: number | null = null
 
 const searchResultIndices = computed(() =>
   buildSearchResultIndices(covers.value, searchResults.value)
@@ -62,8 +65,12 @@ onMounted(async () => {
 })
 
 function handleCoverClick(cover: CoverEntry, index: number) {
+  if (!selectedCover.value && mapInstance.value) {
+    preModalZoom = mapInstance.value.getZoom()
+  }
   selectedCover.value = cover
   selectedIndex.value = index
+  flyToIndex.value = index
 }
 
 function handleFlyComplete() {
@@ -88,11 +95,15 @@ function handleMapReady(m: maplibregl.Map) {
 }
 
 function handleMiniMapNavigate(lng: number, lat: number) {
-  mapInstance.value?.flyTo({ center: [lng, lat], duration: 800 })
+  coverMapRef.value?.jumpWithFade([lng, lat])
 }
 
 function handleCloseModal() {
   selectedCover.value = null
+  if (preModalZoom !== null && mapInstance.value) {
+    mapInstance.value.flyTo({ zoom: preModalZoom, duration: 600 })
+    preModalZoom = null
+  }
 }
 
 function handlePrev() {
@@ -117,6 +128,7 @@ function handleNext() {
 <template>
   <div v-if="covers.length > 0" class="app">
     <CoverMap
+      ref="coverMapRef"
       :covers="covers"
       :fly-to-index="flyToIndex"
       :highlighted-covers="searchResults"

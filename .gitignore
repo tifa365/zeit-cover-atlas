@@ -1,7 +1,4 @@
 node_modules/
 dist/
 public/covers/
-public/covers-thumb/
-public/covers-sprite.webp
-public/search-data/
 scripts/.venv/

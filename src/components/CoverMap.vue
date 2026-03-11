@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, watch, onUnmounted, markRaw } from 'vue'
+import { ref, shallowRef, watch, onMounted, onUnmounted, markRaw } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import '../styles/map.css'
@@ -31,15 +31,12 @@ const fadeOverlay = ref<HTMLDivElement | null>(null)
 
 const searchFlight = new SearchFlightController()
 
-// Initialize map once covers arrive
-watch(
-  () => props.covers.length > 0,
-  (ready) => {
-    if (!ready || map.value || !mapContainer.value) return
+// Initialize map on mount (covers are guaranteed loaded via v-if in App.vue)
+onMounted(() => {
+  if (props.covers.length > 0 && mapContainer.value) {
     initializeMap(props.covers)
-  },
-  { immediate: true }
-)
+  }
+})
 
 function initializeMap(covers: CoverEntry[]) {
   const container = mapContainer.value!
@@ -284,6 +281,29 @@ watch(
     )
   }
 )
+
+/** Fade to black, jump, wait for idle, fade back in */
+function jumpWithFade(center: [number, number]) {
+  const m = map.value
+  const overlay = fadeOverlay.value
+  if (!m || !overlay) {
+    m?.jumpTo({ center })
+    return
+  }
+
+  overlay.style.transition = 'opacity 150ms ease-out'
+  overlay.style.opacity = '1'
+
+  setTimeout(() => {
+    m.jumpTo({ center })
+    m.once('idle', () => {
+      overlay.style.transition = 'opacity 300ms ease-in'
+      overlay.style.opacity = '0'
+    })
+  }, 180)
+}
+
+defineExpose({ jumpWithFade })
 
 onUnmounted(() => {
   searchFlight.reset()

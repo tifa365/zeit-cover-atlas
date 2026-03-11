@@ -66,7 +66,7 @@ onMounted(() => {
       id: 'covers-sprite',
       type: 'raster',
       source: 'covers-sprite',
-      paint: { 'raster-opacity': 0.3, 'raster-fade-duration': 0 },
+      paint: { 'raster-opacity': 0.5, 'raster-fade-duration': 0 },
     })
 
     m.addSource('match-points', {
