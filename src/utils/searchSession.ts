@@ -33,7 +33,6 @@ export function getSearchResultPos(
  */
 export function navigatePrev(
   selectedIndex: number,
-  coversLength: number,
   searchResultIndices: number[]
 ): number | null {
   if (searchResultIndices.length > 0) {
