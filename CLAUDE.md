@@ -4,24 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains **reference artifacts** from the interactive ZEIT 80th anniversary feature ("Was stand in der ZEIT, als Sie geboren wurden?"). It is **not a buildable source repository** — there is no package.json, no source code, and no build toolchain. The actual application source lives elsewhere.
+Interactive cover browser for 80 years of DIE ZEIT (1946–2026). Displays ~4187 weekly cover images on a pannable MapLibre map with full-text search (OCR-based) and a date picker. All user-facing text is in **German** (locale: `de`).
 
-## Contents
+## Commands
 
-- `code.txt` — CMS block registration snippet showing how the React app integrates with ZEIT's CMS via `registerCMSBlocks()`. Defines two embeddable blocks: a MapLibre map (`80-jahre-zeit-maplibre-karte`) and a waypoint navigator (`80-jahre-zeit-waypoint-start`) with three historical events.
-- `react_components_to_install.txt` — Documents the vendor chunk dependencies. If rebuilding from scratch: `npm install react react-map-gl maplibre-gl react-day-picker date-fns framer-motion @turf/turf`.
-- `index.css` — Compiled CSS with the full design system (CSS custom properties prefixed `--2026-80-jahre-zeit-2026-duv-*`). Includes dark mode support via `prefers-color-scheme` and `.color-scheme-dark` class.
-- `birthday_button.css` — Small Svelte-compiled CSS for the birthday button component (scoped with `.svelte-1cxp7dv`).
+- `npm run dev` — Start Vite dev server
+- `npm run build` — TypeScript check + Vite production build (`tsc -b && vite build`)
+- `npm run lint` — ESLint
+- `npm run preview` — Preview production build
 
-## Architecture of the Original App
+## Architecture
 
-The full application is a React app with Svelte components, bundled via Vite/Webpack into a vendor chunk + business logic chunk pattern. Key features:
+**React + TypeScript + Vite** single-page app. No routing — everything is in `App.tsx`.
 
-- **Map viewer**: MapLibre GL with React-Map-GL wrappers, GeoJSON data sources, polygon mask cutouts via Turf.js
-- **Birthday picker**: react-day-picker with date-fns German locale
-- **Animations**: Framer Motion for modal transitions and magnifying glass effect
-- **CMS integration**: Hydrated into ZEIT's CMS via `ReactDOM.hydrateRoot`
+### Key Components (`src/components/`)
 
-## Language
+- **CoverMap** — Core component. Uses MapLibre GL directly (not react-map-gl) to render covers on a fake geographic grid (53 columns × 79 rows, near-equator coordinates to avoid Mercator distortion). Three-tier image loading: base sprite → row sprites → individual hi-res covers.
+- **CoverModal** — Cover detail overlay with prev/next navigation (navigates search results when search is active).
+- **SearchBar** — Full-text search input with 800ms debounce.
+- **SearchMiniMap** — Shows all search result positions as dots; click to fly to location.
+- **DatePicker** — Year → month → day progressive picker using react-day-picker.
 
-All user-facing text is in German (locale: `de`).
+### Data & Search (`src/utils/`)
+
+- **coverLookup** — `CoverEntry` type (`id`, `issue`, `start`, `end`), date-to-cover lookup, grid position math.
+- **coverUrl** — URL helpers for cover images (`/covers/`, `/covers-thumb/`) and ZEIT archive links.
+- **searchIndex** — MiniSearch-based full-text search over OCR data (`/search-data/ocr-index.json`). Boosts headlines 3×, supports fuzzy + prefix matching.
+
+### Map Grid System
+
+Covers are laid out on a geographic coordinate grid (not pixel-based):
+- 53 columns (≈ weeks/year), cell size 0.3 × 0.429 lng/lat units (7:10 aspect ratio)
+- Grid centred at latitude 0; coordinates exported via `coverToGridCoords(index)`
+- Search uses a fade-cut-jump state machine (settling → flying → idle) to avoid tile churn during navigation
+
+### Static Assets (`public/`)
+
+- `fullCoversData.json` — Array of all cover entries loaded at startup
+- `covers-sprite.webp` — Single sprite with all 4187 thumbnails (60×86px each)
+- `row-sprites/row-{n}.webp` — Per-row sprites at 2× resolution
+- `covers/` and `covers-thumb/` — Individual cover images (gitignored)
+- `search-data/ocr-index.json` — OCR text index for MiniSearch
+
+### Scripts (`scripts/`)
+
+Python tooling (managed with `uv`) for OCR processing of cover images.
+
+## Reference Files (from original ZEIT CMS app)
+
+- `code.txt` — CMS block registration snippet (`registerCMSBlocks()`)
+- `react_components_to_install.txt` — Original vendor dependencies
+- `index.css` — Compiled CSS from original app (design tokens prefixed `--2026-80-jahre-zeit-2026-duv-*`)
+- `birthday_button.css` — Svelte-compiled CSS from original
