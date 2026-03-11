@@ -115,7 +115,7 @@ function initializeMap(covers: CoverEntry[]) {
 
     m.addSource('covers-sprite', {
       type: 'image',
-      url: '/covers-sprite.webp',
+      url: `${import.meta.env.BASE_URL}covers-sprite.webp`,
       coordinates: [
         [spriteLeft, spriteTop],
         [spriteRight, spriteTop],

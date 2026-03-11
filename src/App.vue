@@ -51,7 +51,7 @@ const hasNext = computed(() =>
 )
 
 onMounted(async () => {
-  const r = await fetch('/fullCoversData.json')
+  const r = await fetch(`${import.meta.env.BASE_URL}fullCoversData.json`)
   covers.value = await r.json()
 })
 

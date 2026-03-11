@@ -3,6 +3,8 @@ import type { CoverEntry } from "./coverLookup";
 import { getCoverUrl } from "./coverUrl";
 import { COLS, CELL_W, CELL_H, GAP, TOTAL_ROWS, GRID_TOP_LAT, coverToGridCoords } from "./grid";
 
+const base = import.meta.env.BASE_URL;
+
 /** Track loaded row sprites and hi-res individual covers */
 export const rowSpritesLoaded = new Set<number>();
 export const hiResLoaded = new Set<number>();
@@ -69,7 +71,7 @@ export function loadHiResCovers(map: maplibregl.Map, covers: CoverEntry[]): void
       const id = `row-sprite-${r}`;
       map.addSource(id, {
         type: "image",
-        url: `/row-sprites/row-${r}.webp`,
+        url: `${base}row-sprites/row-${r}.webp`,
         coordinates: [
           [0 - CELL_W / 2, rowLat + CELL_H / 2],
           [lastColLng + CELL_W / 2, rowLat + CELL_H / 2],

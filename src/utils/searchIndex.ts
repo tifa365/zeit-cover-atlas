@@ -14,7 +14,7 @@ let miniSearch: MiniSearch<OcrEntry> | null = null;
  * Returns a promise that resolves when the index is ready.
  */
 export async function initSearchIndex(): Promise<void> {
-  const response = await fetch("/search-data/ocr-index.json");
+  const response = await fetch(`${import.meta.env.BASE_URL}search-data/ocr-index.json`);
   const entries: OcrEntry[] = await response.json();
 
   miniSearch = new MiniSearch<OcrEntry>({

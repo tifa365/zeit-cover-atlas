@@ -1,11 +1,13 @@
+const base = import.meta.env.BASE_URL;
+
 export function getCoverUrl(id: string): string {
   const stem = id.replace(/\.jpg$/, "");
-  return `/covers/${stem}.webp`;
+  return `${base}covers/${stem}.webp`;
 }
 
 export function getCoverThumbUrl(id: string): string {
   const stem = id.replace(/\.jpg$/, "");
-  return `/covers-thumb/${stem}.webp`;
+  return `${base}covers-thumb/${stem}.webp`;
 }
 
 export function getArchiveUrl(issue: string): string {

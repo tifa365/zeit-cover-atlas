@@ -54,7 +54,7 @@ onMounted(() => {
   m.on('load', () => {
     m.addSource('covers-sprite', {
       type: 'image',
-      url: '/covers-sprite.webp',
+      url: `${import.meta.env.BASE_URL}covers-sprite.webp`,
       coordinates: [
         [gridLeft, gridTop],
         [gridRight, gridTop],
